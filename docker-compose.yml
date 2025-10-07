@@ -1,0 +1,32 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: helios
+      POSTGRES_PASSWORD: helios_pw
+      POSTGRES_DB: heliospay
+    ports: ["5432:5432"]
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helios -d heliospay"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: ./backend/HelioPay.API
+    environment:
+      ASPNETCORE_URLS: http://+:5000
+      ConnectionStrings__Default: Host=db;Port=5432;Database=heliospay;Username=helios;Password=helios_pw
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["5000:5000"]
+  web:
+    build: ./frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:5000
+    depends_on: [api]
+    ports: ["3000:3000"]
+volumes:
+  dbdata:

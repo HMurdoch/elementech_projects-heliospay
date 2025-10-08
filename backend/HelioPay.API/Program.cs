@@ -11,19 +11,23 @@
         ?? builder.Configuration["ConnectionStrings:Default"]
         ?? "Host=localhost;Port=5432;Database=heliospay;Username=helios;Password=P@$$w0rd";
 
-    // --- CORS (single policy for the SPA) ---
-    const string FrontendPolicy = "FrontendPolicy";
-    builder.Services.AddCors(opt =>
+// --- CORS (single policy for the SPA) ---
+    var AllowLocal = "AllowLocal";
+
+    builder.Services.AddCors(options =>
     {
-        opt.AddPolicy(FrontendPolicy, p => p
-            .WithOrigins("http://localhost:3000", "https://localhost:3000")
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .WithExposedHeaders("Location"));
+        options.AddPolicy(AllowLocal, p =>
+            p.WithOrigins(
+                    "http://localhost:3000",
+                    "https://localhost:3000"  // add https too
+                )
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials());       // keep if you ever use cookies/auth
     });
 
-    // --- EF + Controllers ---
-    builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(conn));
+// --- EF + Controllers ---
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(conn));
     builder.Services.AddControllers()
         .AddJsonOptions(o =>
         {
@@ -33,21 +37,21 @@
         });
 
 
-// --- Swagger ---
-builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen(c =>
-    {
-        c.SwaggerDoc("v1", new OpenApiInfo { Title = "HelioPay API", Version = "v1" });
-        c.EnableAnnotations();
+    // --- Swagger ---
+    builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "HelioPay API", Version = "v1" });
+            c.EnableAnnotations();
 
-        // Include XML comments only if the file exists (avoids 500s)
-        var xml = Path.Combine(AppContext.BaseDirectory, "HelioPay.API.xml");
-        if (File.Exists(xml))
-            c.IncludeXmlComments(xml);
-    });
+            // Include XML comments only if the file exists (avoids 500s)
+            var xml = Path.Combine(AppContext.BaseDirectory, "HelioPay.API.xml");
+            if (File.Exists(xml))
+                c.IncludeXmlComments(xml);
+        });
 
     var app = builder.Build();
-
+    app.UseCors(AllowLocal);
     // --- DB migrate + seed on startup ---
     using (var scope = app.Services.CreateScope())
     {
@@ -72,11 +76,8 @@ builder.Services.AddEndpointsApiExplorer();
         });
     }
 
-    app.UseHttpsRedirection();
+    //app.UseHttpsRedirection();
     app.UseRouting();
-
-    // Apply the single, known CORS policy
-    app.UseCors(FrontendPolicy);
 
     app.UseAuthentication();
     app.UseAuthorization();

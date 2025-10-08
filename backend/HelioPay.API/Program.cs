@@ -1,25 +1,86 @@
-using HelioPay.API.Data;
-using Microsoft.EntityFrameworkCore;
+﻿    using HelioPay.API.Data;
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.OpenApi.Models;
+    using System.Text.Json.Serialization;
 
-var builder = WebApplication.CreateBuilder(args);
-var conn = builder.Configuration.GetConnectionString("Default")
-           ?? builder.Configuration["ConnectionStrings:Default"]
-           ?? "Host=localhost;Port=5432;Database=heliospay;Username=helios;Password=P@$$w0rd";
+    var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(conn));
-builder.Services.AddControllers();
+    // --- Connection string ---
+    var conn =
+        builder.Configuration.GetConnectionString("Default")
+        ?? builder.Configuration["ConnectionStrings:Default"]
+        ?? "Host=localhost;Port=5432;Database=heliospay;Username=helios;Password=P@$$w0rd";
+
+    // --- CORS (single policy for the SPA) ---
+    const string FrontendPolicy = "FrontendPolicy";
+    builder.Services.AddCors(opt =>
+    {
+        opt.AddPolicy(FrontendPolicy, p => p
+            .WithOrigins("http://localhost:3000", "https://localhost:3000")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .WithExposedHeaders("Location"));
+    });
+
+    // --- EF + Controllers ---
+    builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(conn));
+    builder.Services.AddControllers()
+        .AddJsonOptions(o =>
+        {
+            // avoid reference loops in Account <-> Transactions
+            o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+            o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        });
+
+
+// --- Swagger ---
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+    builder.Services.AddSwaggerGen(c =>
+    {
+        c.SwaggerDoc("v1", new OpenApiInfo { Title = "HelioPay API", Version = "v1" });
+        c.EnableAnnotations();
 
-var app = builder.Build();
-app.UseSwagger();
-app.UseSwaggerUI();
-app.MapControllers();
+        // Include XML comments only if the file exists (avoids 500s)
+        var xml = Path.Combine(AppContext.BaseDirectory, "HelioPay.API.xml");
+        if (File.Exists(xml))
+            c.IncludeXmlComments(xml);
+    });
 
-using(var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await Seed.EnsureAsync(db);
-}
+    var app = builder.Build();
 
-app.Run();
+    // --- DB migrate + seed on startup ---
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        if (args.Any(a => a.Equals("--reseed", StringComparison.OrdinalIgnoreCase)))
+            await SeedData.RebuildAsync(db);
+        else
+            await SeedData.EnsureAsync(db);
+    }
+
+    // --- Middleware pipeline ---
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI(ui =>
+        {
+            ui.SwaggerEndpoint("/swagger/v1/swagger.json", "HelioPay API v1");
+            ui.RoutePrefix = "swagger"; // Swagger lives at /swagger
+            ui.DisplayRequestDuration();
+            ui.EnableDeepLinking();
+        });
+    }
+
+    app.UseHttpsRedirection();
+    app.UseRouting();
+
+    // Apply the single, known CORS policy
+    app.UseCors(FrontendPolicy);
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+
+    app.MapControllers();
+
+    app.Run();

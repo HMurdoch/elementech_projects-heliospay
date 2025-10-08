@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace HelioPay.API.Controllers;
 
@@ -6,5 +7,13 @@ namespace HelioPay.API.Controllers;
 [Route("api/[controller]")]
 public class HealthController : ControllerBase
 {
-    [HttpGet] public IActionResult Get() => Ok(new { status="ok", time=DateTime.UtcNow });
+    /// <summary>Returns the service health status.</summary>
+    /// <remarks>Useful for liveness/readiness probes and uptime checks.</remarks>
+    [HttpGet]
+    [SwaggerOperation(
+        Summary = "Service health check",
+        Description = "Returns <c>status</c> and the current UTC <c>time</c>."
+    )]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    public IActionResult Get() => Ok(new { status = "ok", time = DateTime.UtcNow });
 }

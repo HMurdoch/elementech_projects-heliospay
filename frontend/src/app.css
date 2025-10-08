@@ -1,0 +1,250 @@
+:root {
+    --bg: #0f1318;
+    --panel: #141a21;
+    --muted: #8aa0b3;
+    --text: #e7f2ff;
+    --primary: #1f91ff;
+    --red: #ff5e5e;
+    --green: #25d366;
+    --border: #263241;
+    font-synthesis-weight: none;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body, #root {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+}
+
+.page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+h1 {
+    font-size: 24px;
+    margin: 0;
+}
+
+h2 {
+    font-size: 18px;
+    margin: 0;
+}
+
+h3 {
+    margin: 0;
+}
+
+.card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 14px 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.between {
+    justify-content: space-between;
+}
+
+.gap {
+    gap: 8px;
+}
+
+.right {
+    text-align: right;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.btn {
+    padding: 8px 12px;
+    background: #1a222c;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+    .btn:hover {
+        background: #1c2631;
+    }
+
+    .btn.small {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+
+    .btn.primary {
+        background: var(--primary);
+        border-color: transparent;
+        color: #fff;
+    }
+
+    .btn.link {
+        background: transparent;
+        border: none;
+        color: var(--primary);
+    }
+
+    .btn.danger {
+        background: #2a1b1b;
+        border-color: #4c2e2e;
+        color: #ffadad;
+    }
+
+    .btn:disabled {
+        opacity: .6;
+        cursor: not-allowed;
+    }
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+    .table th, .table td {
+        padding: 10px 12px;
+        border-top: 1px solid var(--border);
+    }
+
+    .table thead th {
+        color: #bcd0e6;
+        border-top: none;
+        text-align: left;
+    }
+
+.num {
+    text-align: right;
+}
+
+.green {
+    color: var(--green);
+}
+
+.red {
+    color: var(--red);
+}
+
+.pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+}
+
+.pill-green {
+    background: rgba(37,211,102,.12);
+    color: var(--green);
+    border-color: rgba(37,211,102,.3);
+}
+
+.pill-red {
+    background: rgba(255,94,94,.12);
+    color: var(--red);
+    border-color: rgba(255,94,94,.25);
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 12px;
+    margin-top: 8px;
+}
+
+    .form-grid .span-2 {
+        grid-column: span 2;
+    }
+
+label span {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+
+input, select {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #0f141b;
+    color: var(--text);
+}
+
+em {
+    color: #ffadad;
+    font-style: normal;
+    font-size: 12px;
+}
+
+.actions {
+    margin-top: 4px;
+    justify-content: flex-end;
+}
+
+.dialog {
+    padding: 0;
+    border: none;
+    background: transparent;
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dialog-card {
+    width: 600px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 25px 80px rgba(0,0,0,.55);
+}
+
+.stats {
+    margin: 10px 0 4px;
+    gap: 24px;
+}
+
+.stat .label {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.stat .value {
+    font-size: 18px;
+    margin-top: 2px;
+}

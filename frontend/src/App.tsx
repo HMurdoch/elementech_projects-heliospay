@@ -1,176 +1,183 @@
-﻿import { useEffect, useMemo, useState } from 'react';
-import dayjs from 'dayjs';
-import './app.css';
-import {
-    getAccounts, createAccount, updateAccount, deleteAccount,
-    getTransactions, createTransaction
-} from './lib/api';
-import { Account, Transaction } from './types';
-import AccountsTable from './components/AccountsTable';
-import AccountForm, { AccountFormValues } from './components/AccountForm';
-import TransactionsTable from './components/TransactionsTable';
-import TransactionForm, { TxFormValues } from './components/TransactionForm';
+﻿// src/App.tsx
+import { useEffect, useState } from 'react';
+import type { Account, Transaction } from './types';
+import { AccountsApi, TransactionsApi } from './api';
+import AccountsPanel from './components/AccountsPanel';
+import AccountForm from './components/AccountForm';
+import TransactionForm from './components/TransactionForm';
 
 export default function App() {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(false);
-    const [filterAccountId, setFilterAccountId] = useState<string>('');
-    const [search, setSearch] = useState('');
 
-    // dialogs
-    const [showAccDialog, setShowAccDialog] = useState(false);
-    const [editAcc, setEditAcc] = useState<Account | null>(null);
-    const [showTxDialog, setShowTxDialog] = useState(false);
+    // new/edit account modal
+    const [showAccountForm, setShowAccountForm] = useState(false);
+    const [editAccount, setEditAccount] = useState<Account | null>(null);
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
+    // transactions panel state
+    const [txAccountId, setTxAccountId] = useState<string | undefined>(undefined);
+    const [txQuery, setTxQuery] = useState('');
 
-    const refreshAccounts = async () => {
+    async function loadAccounts() {
         setLoading(true);
-        try { setAccounts(await getAccounts()); }
-        finally { setLoading(false); }
-    };
-
-    const refreshTransactions = async () => {
-        setLoading(true);
-        try { setTransactions(await getTransactions({ accountId: filterAccountId || undefined, q: search || undefined })); }
-        finally { setLoading(false); }
-    };
-
-    useEffect(() => { refreshAccounts(); }, []);
-    useEffect(() => { refreshTransactions(); }, [filterAccountId, search]);
-
-    const totalBalance = useMemo(
-        () => accounts.reduce((s, a) => s + a.balance, 0),
-        [accounts]
-    );
-
-    const handleSaveAccount = async (values: AccountFormValues) => {
-        if (editAcc) {
-            await updateAccount(editAcc.id, values);
-        } else {
-            await createAccount(values);
+        try {
+            const data = await AccountsApi.list();
+            setAccounts(data);
+        } finally {
+            setLoading(false);
         }
-        setShowAccDialog(false);
-        setEditAcc(null);
-        await refreshAccounts();
+    }
+
+    async function loadTransactions() {
+        setLoading(true);
+        try {
+            const data = await TransactionsApi.list({
+                accountId: txAccountId,
+                q: txQuery || undefined,
+            });
+            setTransactions(data);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        // first load
+        loadAccounts();
+        loadTransactions();
+    }, []);
+
+    // whenever tx filters change, refresh list
+    useEffect(() => {
+        loadTransactions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [txAccountId, txQuery]);
+
+    const handleCreateAccount = () => {
+        setEditAccount(null);
+        setShowAccountForm(true);
+    };
+    const handleEditAccount = (acc: Account) => {
+        setEditAccount(acc);
+        setShowAccountForm(true);
     };
 
-    const handleDeleteAccount = async (id: string) => {
-        if (!confirm('Delete this account?')) return;
-        await deleteAccount(id);
-        await refreshAccounts();
-        if (filterAccountId === id) setFilterAccountId('');
-        await refreshTransactions();
+    const handleSaveAccount = async (values: Pick<Account, 'ownerName' | 'accountNumber' | 'currency'> & { id?: string }) => {
+        if (editAccount?.id) {
+            await AccountsApi.update(editAccount.id, values);
+        } else {
+            await AccountsApi.create(values);
+        }
+        setShowAccountForm(false);
+        setEditAccount(null);
+        await loadAccounts();
     };
 
-    const handlePostTx = async (values: TxFormValues) => {
-        // API expects positive amount but type differentiates, or amount sign may matter.
-        const payload = {
-            accountId: values.accountId,
-            type: values.type,
-            amount: values.type === 'Debit' ? -Math.abs(values.amount) : Math.abs(values.amount),
-            description: values.description
-        };
-        await createTransaction(payload);
-        setShowTxDialog(false);
-        await Promise.all([refreshTransactions(), refreshAccounts()]);
+    const handleDeleteAccount = async (acc: Account) => {
+        if (!confirm(`Delete ${acc.ownerName} (${acc.accountNumber})?`)) return;
+        await AccountsApi.remove(acc.id);
+        await loadAccounts();
     };
 
     return (
-        <div className="page">
-            <header className="header">
+        <main className="page">
+            <header className="page-header">
                 <div>
-                    <h1>HeliosPay • Demo</h1>
-                    <div className="muted">Integration POC · {dayjs().format('YYYY')}</div>
+                    <div className="title">HeliosPay • Demo</div>
+                    <div className="subtitle">Integration POC · 2025</div>
                 </div>
-
-                <div className="right">
-                    <div className="muted mono">API: {apiUrl}</div>
-                    <a className="btn link" href={`${apiUrl}/swagger`} target="_blank" rel="noreferrer">Open Swagger ↗</a>
+                <div className="header-actions">
+                    {/* top-left refresh -> handled inside AccountsPanel now */}
+                    {/* Keep top-right Create only */}
+                    <button className="btn primary" onClick={handleCreateAccount}>New account</button>
+                    <a className="link" href="http://localhost:5000/index.html" target="_blank" rel="noreferrer">Open Swagger ↗</a>
                 </div>
             </header>
 
             {/* Accounts */}
-            <section className="card">
-                <div className="row between">
-                    <h2>Accounts</h2>
-                    <div className="row gap">
-                        <button className="btn" onClick={refreshAccounts} disabled={loading}>Refresh</button>
-                        <button className="btn primary" onClick={() => { setEditAcc(null); setShowAccDialog(true); }}>New account</button>
-                    </div>
+            <AccountsPanel
+                accounts={accounts}
+                setAccounts={setAccounts}
+                onEdit={handleEditAccount}
+                onDelete={handleDeleteAccount}
+                onCreate={handleCreateAccount}
+            />
+
+            {/* Transactions */}
+            <section className="panel" style={{ marginTop: 20 }}>
+                <header className="panel-header">
+                    <h3>Transactions</h3>
+                </header>
+                <div className="tx-filters">
+                    <select
+                        value={txAccountId ?? ''}
+                        onChange={(e) => setTxAccountId(e.target.value || undefined)}
+                    >
+                        <option value="">All accounts</option>
+                        {accounts.map(a => (
+                            <option key={a.id} value={a.id}>
+                                {a.ownerName} — {a.accountNumber}
+                            </option>
+                        ))}
+                    </select>
+
+                    <input
+                        placeholder="Search description…"
+                        value={txQuery}
+                        onChange={(e) => setTxQuery(e.target.value)}
+                    />
+
+                    <button className="btn" onClick={loadTransactions}>Refresh</button>
+
+                    {/* Add transaction button opens existing TransactionForm (unchanged) */}
+                    <TransactionForm
+                        accounts={accounts}
+                        onPosted={loadTransactions}
+                    />
                 </div>
 
-                <div className="row stats">
-                    <div className="stat">
-                        <div className="label">Accounts</div>
-                        <div className="value">{accounts.length}</div>
-                    </div>
-                    <div className="stat">
-                        <div className="label">Total balance</div>
-                        <div className="value">{totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                    </div>
+                <div className="table-wrap">
+                    <table className="grid">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Account ID</th>
+                                <th>Amount</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {transactions.length === 0 && (
+                                <tr><td colSpan={5}>No transactions</td></tr>
+                            )}
+                            {transactions.map(t => (
+                                <tr key={t.id}>
+                                    <td>{new Date(t.createdAt).toLocaleString()}</td>
+                                    <td>{t.accountId.slice(0, 8)}</td>
+                                    <td
+                                        style={{ color: t.type === 'Credit' ? 'var(--green)' : 'var(--red)' }}
+                                    >
+                                        {t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    </td>
+                                    <td>{t.type}</td>
+                                    <td>{t.description || ''}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
+            </section>
 
-                <AccountsTable
-                    items={accounts}
-                    onEdit={(a) => { setEditAcc(a); setShowAccDialog(true); }}
-                    onDelete={handleDeleteAccount}
+            {/* Account modal */}
+            {showAccountForm && (
+                <AccountForm
+                    initial={editAccount ?? undefined}
+                    onCancel={() => { setShowAccountForm(false); setEditAccount(null); }}
+                    onSave={handleSaveAccount}
                 />
-            </section>
-
-            {/* Filters + post transaction */}
-            <section className="card">
-                <div className="row between">
-                    <h2>Transactions</h2>
-                    <div className="row gap">
-                        <select value={filterAccountId} onChange={e => setFilterAccountId(e.target.value)}>
-                            <option value="">All accounts</option>
-                            {accounts.map(a => <option key={a.id} value={a.id}>{a.ownerName} – {a.accountNumber}</option>)}
-                        </select>
-                        <input placeholder="Search description…" value={search} onChange={e => setSearch(e.target.value)} />
-                        <button className="btn" onClick={refreshTransactions} disabled={loading}>Refresh</button>
-                        <button className="btn primary" onClick={() => setShowTxDialog(true)} disabled={!accounts.length}>Add transaction</button>
-                    </div>
-                </div>
-
-                <TransactionsTable items={transactions} />
-            </section>
-
-            {/* Account dialog */}
-            {showAccDialog && (
-                <dialog open className="dialog">
-                    <div className="dialog-card">
-                        <div className="row between">
-                            <h3>{editAcc ? 'Edit account' : 'New account'}</h3>
-                            <button className="btn small" onClick={() => { setShowAccDialog(false); setEditAcc(null); }}>✕</button>
-                        </div>
-                        <AccountForm
-                            defaultValues={editAcc ?? undefined}
-                            onSubmit={handleSaveAccount}
-                            onCancel={() => { setShowAccDialog(false); setEditAcc(null); }}
-                        />
-                    </div>
-                </dialog>
             )}
-
-            {/* Transaction dialog */}
-            {showTxDialog && (
-                <dialog open className="dialog">
-                    <div className="dialog-card">
-                        <div className="row between">
-                            <h3>Post transaction</h3>
-                            <button className="btn small" onClick={() => setShowTxDialog(false)}>✕</button>
-                        </div>
-                        <TransactionForm
-                            accounts={accounts}
-                            defaultAccountId={filterAccountId || accounts[0]?.id}
-                            onSubmit={handlePostTx}
-                            onCancel={() => setShowTxDialog(false)}
-                        />
-                    </div>
-                </dialog>
-            )}
-        </div>
+        </main>
     );
 }

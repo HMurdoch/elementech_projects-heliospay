@@ -1,87 +1,78 @@
-﻿    using HelioPay.API.Data;
-    using Microsoft.EntityFrameworkCore;
-    using Microsoft.OpenApi.Models;
-    using System.Text.Json.Serialization;
+﻿using HelioPay.API.Data;     // your DbContext namespace
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
-    var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-    // --- Connection string ---
-    var conn =
-        builder.Configuration.GetConnectionString("Default")
-        ?? builder.Configuration["ConnectionStrings:Default"]
-        ?? "Host=localhost;Port=5432;Database=heliospay;Username=helios;Password=P@$$w0rd";
+// -------------------- Services --------------------
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
-// --- CORS (single policy for the SPA) ---
-    var AllowLocal = "AllowLocal";
+// ----- DB connection: Dev uses appsettings(local); Prod uses env var -----
+var config = builder.Configuration;
 
-    builder.Services.AddCors(options =>
+// Priority: appsettings ConnectionStrings:Default -> env var -> DATABASE_URL
+var cs = config.GetConnectionString("Default")
+         ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+         ?? Environment.GetEnvironmentVariable("DATABASE_URL");
+
+if (string.IsNullOrWhiteSpace(cs))
+    throw new InvalidOperationException("Database connection string not provided.");
+
+// Convert postgres URL to Npgsql format if needed (adds SSL for Render)
+if (cs.StartsWith("postgres", StringComparison.OrdinalIgnoreCase))
+{
+    var uri = new Uri(cs);
+    var ui = uri.UserInfo.Split(':', 2);
+    var npg = new NpgsqlConnectionStringBuilder
     {
-        options.AddPolicy(AllowLocal, p =>
-            p.WithOrigins(
-                    "http://localhost:3000",
-                    "https://localhost:3000"  // add https too
-                )
-                .AllowAnyHeader()
-                .AllowAnyMethod()
-                .AllowCredentials());       // keep if you ever use cookies/auth
-    });
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = uri.AbsolutePath.Trim('/'),
+        Username = ui.ElementAtOrDefault(0) ?? "",
+        Password = ui.ElementAtOrDefault(1) ?? "",
+        SslMode = SslMode.Require,
+        TrustServerCertificate = true
+    };
+    cs = npg.ToString();
+}
 
-// --- EF + Controllers ---
-builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(conn));
-    builder.Services.AddControllers()
-        .AddJsonOptions(o =>
-        {
-            // avoid reference loops in Account <-> Transactions
-            o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-            o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-        });
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(cs));
 
+var app = builder.Build();
 
-    // --- Swagger ---
-    builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen(c =>
-        {
-            c.SwaggerDoc("v1", new OpenApiInfo { Title = "HelioPay API", Version = "v1" });
-            c.EnableAnnotations();
+// -------------------- Pipeline --------------------
+// Swagger ALWAYS on (dev + prod)
+app.UseSwagger();
+app.UseSwaggerUI(opt =>
+{
+    // UI lives at /swagger
+    opt.RoutePrefix = "swagger";
+    // JSON at /swagger/v1/swagger.json
+    opt.SwaggerEndpoint("/swagger/v1/swagger.json", "HeliosPay API v1");
+});
 
-            // Include XML comments only if the file exists (avoids 500s)
-            var xml = Path.Combine(AppContext.BaseDirectory, "HelioPay.API.xml");
-            if (File.Exists(xml))
-                c.IncludeXmlComments(xml);
-        });
+// Optional redirect: open root -> /swagger
+app.MapGet("/", ctx =>
+{
+    ctx.Response.Redirect("/swagger", permanent: false);
+    return Task.CompletedTask;
+});
 
-    var app = builder.Build();
-    app.UseCors(AllowLocal);
-    // --- DB migrate + seed on startup ---
-    using (var scope = app.Services.CreateScope())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+// Health check for Render
+app.MapGet("/health", () => Results.Ok(new { ok = true, ts = DateTimeOffset.UtcNow }));
 
-        if (args.Any(a => a.Equals("--reseed", StringComparison.OrdinalIgnoreCase)))
-            await SeedData.RebuildAsync(db);
-        else
-            await SeedData.EnsureAsync(db);
-    }
+app.UseRouting();
+app.UseAuthorization();
+app.MapControllers();
 
-    // --- Middleware pipeline ---
-    if (app.Environment.IsDevelopment())
-    {
-        app.UseSwagger();
-        app.UseSwaggerUI(ui =>
-        {
-            ui.SwaggerEndpoint("/swagger/v1/swagger.json", "HelioPay API v1");
-            ui.RoutePrefix = "swagger"; // Swagger lives at /swagger
-            ui.DisplayRequestDuration();
-            ui.EnableDeepLinking();
-        });
-    }
+// Helpful startup log: which DB are we using?
+try
+{
+    var b = new NpgsqlConnectionStringBuilder(cs);
+    app.Logger.LogInformation("DB host: {Host} db: {Db}", b.Host, b.Database);
+}
+catch { /* ignore */ }
 
-    //app.UseHttpsRedirection();
-    app.UseRouting();
-
-    app.UseAuthentication();
-    app.UseAuthorization();
-
-    app.MapControllers();
-
-    app.Run();
+app.Run();

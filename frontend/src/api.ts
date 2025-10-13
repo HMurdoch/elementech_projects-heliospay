@@ -1,132 +1,217 @@
 ﻿// src/api.ts
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
+// Single place for all HTTP calls used by the app.
+// Works with your HelioPay.API controllers (Accounts, Transactions).
 
-type HttpOpts = RequestInit & { query?: Record<string, string | number | undefined | null> };
+export type Currency = 'ZAR' | 'USD' | 'EUR' | 'GBP';
 
-async function http<T>(path: string, opts: HttpOpts = {}): Promise<T> {
+export type Account = {
+    id: string;               // Guid
+    owner: string;
+    accountNumber: string;
+    currency: Currency;
+    balance: number;
+    createdAt: string;        // ISO date
+};
+
+export type AccountUpsert = {
+    owner: string;
+    accountNumber: string;
+    currency: Currency;
+};
+
+export type TransactionType = 'Credit' | 'Debit';
+
+export type Transaction = {
+    id: string;               // Guid
+    accountId: string;        // Guid
+    amount: number;           // positive for Credit, negative for Debit in DB; UI sends + and type
+    type: TransactionType;
+    description?: string;
+    createdAt: string;        // ISO date
+};
+
+export type TxnPost = {
+    accountId: string;
+    amount: number;           // positive value
+    type: TransactionType;    // 'Credit' | 'Debit'
+    description?: string;
+};
+
+export type AccountsFilter = {
+    owner?: string;
+    accountNumber?: string;
+    balanceFrom?: number | null;
+    balanceTo?: number | null;
+    createdFrom?: string | null; // ISO (yyyy-mm-dd) or null
+    createdTo?: string | null;   // ISO (yyyy-mm-dd) or null
+};
+
+const API = (import.meta.env.VITE_API_URL as string) ?? 'http://localhost:5000';
+const BASE = `${API.replace(/\/+$/, '')}/api`;
+
+async function http<T>(
+    path: string,
+    init?: RequestInit
+): Promise<T> {
+    const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...init,
+    });
+
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        // Bubble a helpful error up to the UI
+        throw new Error(`${res.status} ${res.statusText} — ${text || path}`);
+    }
+    // 204 no content?
+    if (res.status === 204) return undefined as unknown as T;
+    return res.json() as Promise<T>;
+}
+
+/*───────────────────────────────────────────────────────────*
+ * Accounts
+ *───────────────────────────────────────────────────────────*/
+
+export async function getAccounts(): Promise<Account[]> {
+    return http<Account[]>(`${BASE}/accounts`);
+}
+
+export async function getAccountsFiltered(
+    f: AccountsFilter
+): Promise<Account[]> {
+    const q = new URLSearchParams();
+
+    if (f.owner) q.set('owner', f.owner);
+    if (f.accountNumber) q.set('accountNumber', f.accountNumber);
+    if (f.balanceFrom != null && f.balanceFrom !== undefined)
+        q.set('balanceFrom', String(f.balanceFrom));
+    if (f.balanceTo != null && f.balanceTo !== undefined)
+        q.set('balanceTo', String(f.balanceTo));
+    if (f.createdFrom) q.set('createdFrom', f.createdFrom);
+    if (f.createdTo) q.set('createdTo', f.createdTo);
+
+    const url =
+        q.toString().length > 0
+            ? `${BASE}/accounts?${q.toString()}`
+            : `${BASE}/accounts`;
+
+    return http<Account[]>(url);
+}
+
+export async function createAccount(payload: AccountUpsert): Promise<Account> {
+    return http<Account>(`${BASE}/accounts`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function updateAccount(
+    id: string,
+    payload: AccountUpsert
+): Promise<Account> {
+    return http<Account>(`${BASE}/accounts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function deleteAccount(id: string): Promise<void> {
+    return http<void>(`${BASE}/accounts/${id}`, { method: 'DELETE' });
+}
+
+/*───────────────────────────────────────────────────────────*
+ * Transactions
+ *───────────────────────────────────────────────────────────*/
+
+export async function getTransactions(
+    accountId?: string,
+    q?: string
+): Promise<Transaction[]> {
+    const qs = new URLSearchParams();
+    if (accountId) qs.set('accountId', accountId);
+    if (q) qs.set('q', q);
+
+    const url =
+        qs.toString().length > 0
+            ? `${BASE}/transactions?${qs.toString()}`
+            : `${BASE}/transactions`;
+
+    return http<Transaction[]>(url);
+}
+
+export async function postTransaction(payload: TxnPost): Promise<Transaction> {
+    return http<Transaction>(`${BASE}/transactions`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function deleteTransaction(id: string): Promise<void> {
+    return http<void>(`${BASE}/transactions/${id}`, { method: 'DELETE' });
+}
+
+// Unified, typed API helpers used by the app
+// Works with: http://localhost:5000 (override via VITE_API_URL)
+
+const API_BASE = (import.meta as any)?.env?.VITE_API_URL ?? 'http://localhost:5000';
+
+async function request<T>(
+    path: string,
+    options?: RequestInit & { query?: Record<string, unknown> }
+): Promise<T> {
     const url = new URL(path, API_BASE);
-    if (opts.query) {
-        Object.entries(opts.query).forEach(([k, v]) => {
-            if (v !== undefined && v !== null && `${v}`.length) url.searchParams.set(k, String(v));
-        });
+
+    if (options?.query) {
+        Object.entries(options.query)
+            .filter(([, v]) => v !== undefined && v !== null && v !== '')
+            .forEach(([k, v]) => url.searchParams.set(k, String(v)));
     }
 
     const res = await fetch(url.toString(), {
         headers: { 'Content-Type': 'application/json' },
-        ...opts,
+        ...options,
+        // keep CORS simple for localhost dev
+        mode: 'cors',
     });
 
     if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status} ${res.statusText}: ${text}`);
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
     }
-    return (await res.json()) as T;
+    return (res.status === 204 ? (undefined as unknown as T) : (await res.json())) as T;
 }
 
-/* =========================
- * Accounts
- * =======================*/
+// -------------------- Accounts --------------------
+
+export type AccountDto = {
+    ownerName: string;
+    accountNumber: string;
+    currency: string;
+    balance?: number;
+};
+
 export const AccountsApi = {
-    list: () => http<Account[]>('/api/accounts'),
-    create: (data: Pick<Account, 'ownerName' | 'accountNumber' | 'currency'>) =>
-        http<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<Account>) =>
-        http<Account>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    remove: (id: string) => http<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
+    list: () => request<any[]>('/api/accounts'),
+    get: (id: string) => request<any>(`/api/accounts/${id}`),
+    create: (dto: AccountDto) =>
+        request<any>('/api/accounts', { method: 'POST', body: JSON.stringify(dto) }),
+    update: (id: string, dto: Partial<AccountDto>) =>
+        request<any>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(dto) }),
+    remove: (id: string) => request<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
 };
 
-/* =========================
- * Transactions
- *  - server already supports ?accountId=&q=
- * =======================*/
+// ------------------ Transactions ------------------
+
+export type TransactionCreateDto = {
+    accountId: string;
+    type: 'Credit' | 'Debit';
+    amount: number;
+    description?: string | null;
+};
+
 export const TransactionsApi = {
-    list: (p: { accountId?: string; q?: string } = {}) =>
-        http<Transaction[]>('/api/transactions', { query: p }),
-    create: (data: { accountId: string; amount: number; type: 'Credit' | 'Debit'; description?: string }) =>
-        http<Transaction>('/api/transactions', { method: 'POST', body: JSON.stringify(data) }),
+    list: (q?: { accountId?: string; q?: string; take?: number }) =>
+        request<any[]>('/api/transactions', { query: q }),
+    create: (dto: TransactionCreateDto) =>
+        request<any>('/api/transactions', { method: 'POST', body: JSON.stringify(dto) }),
 };
-
-/* ==== Types ==== */
-export type Account = {
-    id: string;
-    ownerName: string;
-    accountNumber: string;
-    balance: number;
-    currency: string;
-    createdUtc: string;
-};
-
-export type Transaction = {
-    id: string;
-    accountId: string;
-    createdAt: string;
-    amount: number;
-    type: "Debit" | "Credit";
-    description?: string;
-};
-
-export type AccountFilters = {
-    owner?: string;
-    accountNumber?: string;
-    balanceFrom?: number;
-    balanceTo?: number;
-    createdFrom?: string; // yyyy-mm-dd
-    createdTo?: string;   // yyyy-mm-dd
-};
-
-/* ==== Accounts ==== */
-export function getAccounts(filters?: AccountFilters) {
-    // Map UI filters to API query params (adjust names if your controller differs)
-    return http<Account[]>("/api/accounts", {
-        query: {
-            ownerName: filters?.owner,
-            accountNumber: filters?.accountNumber,
-            balanceFrom: filters?.balanceFrom,
-            balanceTo: filters?.balanceTo,
-            createdFrom: filters?.createdFrom,
-            createdTo: filters?.createdTo,
-        },
-    });
-}
-
-export function createAccount(payload: {
-    ownerName: string;
-    accountNumber: string;
-    currency: string;
-}) {
-    return http<Account>("/api/accounts", {
-        method: "POST",
-        body: JSON.stringify(payload),
-    });
-}
-
-export function updateAccount(
-    id: string,
-    payload: Partial<Pick<Account, "ownerName" | "accountNumber" | "currency">>
-) {
-    return http<Account>(`/api/accounts/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-    });
-}
-
-export function deleteAccount(id: string) {
-    return http<Json>(`/api/accounts/${id}`, { method: "DELETE" });
-}
-
-/* ==== Transactions ==== */
-export function getTransactions(params: { accountId?: string; q?: string }) {
-    return http<Transaction[]>("/api/transactions", { query: params });
-}
-
-export function createTransaction(payload: {
-    accountId: string;
-    type: "Debit" | "Credit";
-    amount: number;
-    description?: string;
-}) {
-    return http<Transaction>("/api/transactions", {
-        method: "POST",
-        body: JSON.stringify(payload),
-    });
-}

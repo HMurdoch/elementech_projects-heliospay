@@ -689,5 +689,175 @@ tr.muted td {
     color: #ffb3c1;
 }
 
-----------------------------------------------------------------* /
+/* keep table header/rows aligned */
+.grid.fixed {
+    table-layout: fixed;
+    width: 100%;
+}
+
+/* two-pane layout (list + details) */
+.two-pane {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px;
+    align-items: start;
+}
+
+.details {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 14px;
+    height: 100%;
+    overflow: auto;
+    opacity: 0;
+    transform: translateX(6px);
+    transition: .2s;
+}
+
+.details.open {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.details .muted {
+    opacity: .7;
+}
+
+.details .overline {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    opacity: .7;
+    margin-bottom: 4px;
+}
+
+.details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 12px;
+}
+
+.kv {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.kv div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.kv span {
+    opacity: .7;
+}
+
+/* transfer form */
+.xfer {
+    display: grid;
+    gap: 8px;
+}
+
+.xfer input, .xfer select {
+    width: 100%;
+}
+
+/* make list clickable but buttons work */
+.accounts-list .rows {
+    pointer-events: auto;
+}
+
+.accounts-list .actions .btn {
+    pointer-events: auto;
+}
+
+/* selected row highlight */
+tr.selected {
+    background: rgba(41,98,255,.08);
+}
+
+/* autoscroll when no filters */
+.accounts-list.scrolling .rows {
+    animation: autoscroll 28s linear infinite;
+}
+
+.accounts-list.scrolling:hover .rows {
+    animation-play-state: paused;
+}
+
+@keyframes autoscroll {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(-520px);
+    }
+    /* tweak for your row count/height */
+}
+
+/* utility */
+.table-wrap {
+    overflow: hidden;
+    border-radius: 10px;
+}
+/* ensure nothing blocks mouse events */
+.clickfix, .clickfix * {
+    pointer-events: auto;
+}
+
+/* tables align */
+.grid.fixed {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.table-wrap {
+    overflow: hidden;
+    border-radius: 10px;
+}
+
+/* autoscroll behaviour (optional) */
+.accounts-list.scrolling .rows {
+    animation: autoscroll 28s linear infinite;
+}
+
+.accounts-list.scrolling:hover .rows {
+    animation-play-state: paused;
+}
+
+@keyframes autoscroll {
+    0% {
+        transform: translateY(0)
+    }
+
+    100% {
+        transform: translateY(-520px)
+    }
+}
+
+/* make the left list scroll by default when no filters applied */
+.accounts-list.scrolling .rows {
+    animation: autoscroll 30s linear infinite;
+}
+
+.accounts-list.scrolling:hover .rows {
+    animation-play-state: paused;
+}
+
+@keyframes autoscroll {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(-500px);
+    }
+    /* adjust to your row height/count */
+}
+
 

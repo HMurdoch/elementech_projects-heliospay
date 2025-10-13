@@ -1,7 +1,8 @@
-﻿// src/components/AccountsPanel.tsx
-import { useEffect, useMemo, useState } from 'react';
-import type { Account, Transaction } from '../types';
-import { AccountsApi, TransactionsApi } from '../api';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { AccountsApi, TransactionsApi, TransfersApi, deleteAccount as apiDeleteAccount } from '../api';
+import type { Account, Transaction } from '../api';
+import AccountModal from './AccountModal';
+import ConfirmModal from './ConfirmModal';
 
 type Filters = {
     owner?: string;
@@ -15,40 +16,41 @@ type Filters = {
 type Props = {
     accounts: Account[];
     setAccounts: (rows: Account[]) => void;
-    onCreate: () => void;
-    onEdit: (acc: Account) => void;
-    onDelete: (acc: Account) => void;
 };
 
-export default function AccountsPanel({
-    accounts,
-    setAccounts,
-    onCreate,
-    onEdit,
-    onDelete,
-}: Props) {
-    const [filters, setFilters] = useState<Filters>({
-        owner: '',
-        accountNumber: '',
-        balanceFrom: null,
-        balanceTo: null,
-        createdFrom: '',
-        createdTo: '',
-    });
-
+export default function AccountsPanel({ accounts, setAccounts }: Props) {
+    const [filters, setFilters] = useState<Filters>({});
     const [selected, setSelected] = useState<Account | null>(null);
     const [recent, setRecent] = useState<Transaction[]>([]);
+
+    // modals
+    const [showCreate, setShowCreate] = useState(false);
+    const [editAcc, setEditAcc] = useState<Account | null>(null);
+    const [delAcc, setDelAcc] = useState<Account | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
+    // transfer
     const [xferTo, setXferTo] = useState('');
     const [xferAmt, setXferAmt] = useState('');
     const [xferDesc, setXferDesc] = useState('');
+    const [posting, setPosting] = useState(false);
+    const [msg, setMsg] = useState('');
 
-    const noFilters =
-        !filters.owner?.trim() &&
-        !filters.accountNumber?.trim() &&
-        (filters.balanceFrom == null || filters.balanceFrom === ('' as any)) &&
-        (filters.balanceTo == null || filters.balanceTo === ('' as any)) &&
-        !filters.createdFrom?.trim() &&
-        !filters.createdTo?.trim();
+    async function refresh() {
+        const data = await AccountsApi.list();
+        setAccounts(data);
+        if (selected) {
+            const s = data.find(a => a.id === selected.id) ?? null;
+            setSelected(s);
+        }
+    }
+
+    useEffect(() => {
+        if (!selected) return void setRecent([]);
+        TransactionsApi.list({ accountId: selected.id, take: 10 })
+            .then(t => setRecent(t))
+            .catch(() => setRecent([]));
+    }, [selected]);
 
     const rows = useMemo(() => {
         return accounts.filter((a) => {
@@ -65,104 +67,119 @@ export default function AccountsPanel({
             if (filters.createdTo && created > new Date(filters.createdTo)) return false;
             return true;
         });
-    }, [accounts, filters]);  // :contentReference[oaicite:0]{index=0}
-
-    async function refresh() {
-        const data = await AccountsApi.list();
-        setAccounts(data);
-    }
-
-    useEffect(() => {
-        if (!selected) return void setRecent([]);
-        TransactionsApi.list({ accountId: selected.id })
-            .then((t) => setRecent(t.slice(0, 10)))
-            .catch(() => setRecent([]));
-    }, [selected]);  // :contentReference[oaicite:1]{index=1}
+    }, [accounts, filters]);
 
     async function postTransfer(e: React.FormEvent) {
         e.preventDefault();
-        if (!selected || !xferTo || !xferAmt) return;
+        setMsg('');
+        if (!selected) return;
+
+        if (!xferTo) { setMsg('Please choose a destination account.'); return; }
         const amount = Number(xferAmt);
-        if (!amount || amount <= 0) return;
+        if (!amount || amount <= 0) { setMsg('Enter a positive amount.'); return; }
+        if (selected.id === xferTo) { setMsg('From and To cannot match.'); return; }
 
-        await TransactionsApi.create({
-            accountId: selected.id,
-            type: 'Debit',
-            amount,
-            description: xferDesc ? `Transfer to ${xferTo.slice(0, 6)}… — ${xferDesc}` : `Transfer to ${xferTo.slice(0, 6)}…`,
-        });
-        await TransactionsApi.create({
-            accountId: xferTo,
-            type: 'Credit',
-            amount,
-            description: xferDesc ? `Transfer from ${selected.accountNumber} — ${xferDesc}` : `Transfer from ${selected.accountNumber}`,
-        });
+        const toAcc = accounts.find(a => a.id === xferTo);
+        if (toAcc && String(toAcc.currency).toUpperCase() !== String(selected.currency).toUpperCase()) {
+            setMsg(`Currencies must match (${String(selected.currency).toUpperCase()} → ${String(toAcc.currency).toUpperCase()}).`);
+            return;
+        }
 
-        await refresh();
-        setXferAmt('');
-        setXferDesc('');
-        const tx = await TransactionsApi.list({ accountId: selected.id });
-        setRecent(tx.slice(0, 10));
+        setPosting(true);
+        try {
+            await TransfersApi.transfer({
+                fromAccountId: selected.id,
+                toAccountId: xferTo,
+                amount,
+                description: xferDesc || undefined,
+            });
+
+            await refresh();
+            const tx = await TransactionsApi.list({ accountId: selected.id, take: 10 });
+            setRecent(tx);
+            setXferAmt('');
+            setXferDesc('');
+            setMsg('Transfer posted.');
+        } catch (err: any) {
+            setMsg(err?.message ?? 'Failed to post transfer.');
+        } finally {
+            setPosting(false);
+        }
+    }
+
+    async function confirmDelete() {
+        if (!delAcc) return;
+        setDeleting(true);
+        try {
+            await apiDeleteAccount(delAcc.id);
+            setDelAcc(null);
+            // if we deleted the selected one, clear panel
+            if (selected?.id === delAcc.id) setSelected(null);
+            await refresh();
+        } catch (err) {
+            // optional: toast
+        } finally {
+            setDeleting(false);
+        }
     }
 
     return (
-        <section className="panel clickfix">
-            <header className="panel-header">
-                <div className="panel-left">
+        <section className="accounts-page">
+            <div className="accounts-toolbar">
+                <div className="left">
                     <button type="button" className="btn" onClick={refresh}>Refresh</button>
                 </div>
-                <div className="panel-right">
-                    <button type="button" className="btn primary" onClick={onCreate}>New account</button>
+                <div className="right">
+                    <button type="button" className="btn primary" onClick={() => setShowCreate(true)}>New account</button>
                 </div>
-            </header>
-
-            <div className="filters-bar">
-                <input placeholder="Owner" value={filters.owner ?? ''} onChange={(e) => setFilters(f => ({ ...f, owner: e.target.value }))} />
-                <input placeholder="Account #" value={filters.accountNumber ?? ''} onChange={(e) => setFilters(f => ({ ...f, accountNumber: e.target.value }))} />
-                <input type="number" placeholder="Balance from" value={filters.balanceFrom ?? ''} onChange={(e) => setFilters(f => ({ ...f, balanceFrom: e.target.value === '' ? null : Number(e.target.value) }))} />
-                <input type="number" placeholder="to" value={filters.balanceTo ?? ''} onChange={(e) => setFilters(f => ({ ...f, balanceTo: e.target.value === '' ? null : Number(e.target.value) }))} />
-                <input type="date" value={filters.createdFrom ?? ''} onChange={(e) => setFilters(f => ({ ...f, createdFrom: e.target.value }))} />
-                <input type="date" value={filters.createdTo ?? ''} onChange={(e) => setFilters(f => ({ ...f, createdTo: e.target.value }))} />
             </div>
 
-            <div className="two-pane">
-                <div className={`accounts-list ${noFilters ? 'scrolling' : ''}`}>
-                    <div className="rows">
+            <div className="accounts-2col">
+                {/* LEFT */}
+                <div className="pane-left">
+                    <div className="filters">
+                        <input placeholder="Owner" value={filters.owner ?? ''} onChange={(e) => setFilters(f => ({ ...f, owner: e.target.value }))} />
+                        <input placeholder="Account #" value={filters.accountNumber ?? ''} onChange={(e) => setFilters(f => ({ ...f, accountNumber: e.target.value }))} />
+                        <input type="number" placeholder="Balance from" value={filters.balanceFrom ?? ''} onChange={(e) => setFilters(f => ({ ...f, balanceFrom: e.target.value === '' ? null : Number(e.target.value) }))} />
+                        <input type="number" placeholder="to" value={filters.balanceTo ?? ''} onChange={(e) => setFilters(f => ({ ...f, balanceTo: e.target.value === '' ? null : Number(e.target.value) }))} />
+                        <input type="date" value={filters.createdFrom ?? ''} onChange={(e) => setFilters(f => ({ ...f, createdFrom: e.target.value }))} />
+                        <input type="date" value={filters.createdTo ?? ''} onChange={(e) => setFilters(f => ({ ...f, createdTo: e.target.value }))} />
+                    </div>
+
+                    <div className="list-scroll">
                         <table className="grid fixed">
                             <colgroup>
                                 <col />
                                 <col />
                                 <col style={{ width: 90 }} />
                                 <col style={{ width: 140 }} />
+                                <col style={{ width: 160 }} />
                                 <col style={{ width: 140 }} />
                             </colgroup>
                             <thead>
                                 <tr>
                                     <th>Owner</th>
                                     <th>Account #</th>
-                                    <th>Currency</th>
+                                    <th>Cur</th>
                                     <th>Balance</th>
                                     <th>Created</th>
-                                    <th style={{ width: 120 }} />
+                                    <th />
                                 </tr>
                             </thead>
                             <tbody>
                                 {rows.map((a) => (
-                                    <tr key={a.id} className={selected?.id === a.id ? 'selected' : ''} onClick={() => setSelected(a)} style={{ cursor: 'pointer' }}>
+                                    <tr key={a.id}
+                                        className={selected?.id === a.id ? 'selected' : ''}
+                                        onClick={() => setSelected(a)}
+                                        style={{ cursor: 'pointer' }}>
                                         <td>{a.ownerName}</td>
                                         <td>{a.accountNumber}</td>
-                                        <td>{a.currency}</td>
-                                        <td>{a.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        <td>{String(a.currency).toUpperCase()}</td>
+                                        <td>{Number(a.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                         <td>{new Date(a.createdUtc).toLocaleString()}</td>
                                         <td className="actions">
-                                            <button type="button" className="btn sm"
-                                                onClick={(e) => { e.stopPropagation(); onEdit(a); }}>
-                                                Edit
-                                            </button>
-                                            <button type="button" className="btn sm danger"
-                                                onClick={(e) => { e.stopPropagation(); onDelete(a); }}>
-                                                Delete
-                                            </button>
+                                            <button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); setEditAcc(a); }}>Edit</button>
+                                            <button type="button" className="btn sm danger" onClick={(e) => { e.stopPropagation(); setDelAcc(a); }}>Delete</button>
                                         </td>
                                     </tr>
                                 ))}
@@ -172,24 +189,25 @@ export default function AccountsPanel({
                     </div>
                 </div>
 
-                <aside className={`details ${selected ? 'open' : ''}`}>
-                    {!selected && <div className="muted">Click an account to view details</div>}
+                {/* RIGHT */}
+                <aside className="pane-right">
+                    {!selected && <div className="muted">Select an account to view details</div>}
                     {selected && (
-                        <>
-                            <div className="details-header">
+                        <div className="details-card">
+                            <div className="details-head">
                                 <div>
                                     <div className="overline">Selected account</div>
-                                    <h3 style={{ margin: 0 }}>{selected.ownerName}</h3>
-                                    <div className="muted">{selected.accountNumber} • {selected.currency}</div>
+                                    <h3 className="title">{selected.ownerName}</h3>
+                                    <div className="muted">{selected.accountNumber} • {String(selected.currency).toUpperCase()}</div>
                                 </div>
-                                <div>
-                                    <button type="button" className="btn sm" onClick={() => onEdit(selected)}>Edit</button>
-                                    <button type="button" className="btn sm danger" onClick={() => onDelete(selected)}>Delete</button>
+                                <div className="head-actions">
+                                    <button type="button" className="btn sm" onClick={() => setEditAcc(selected)}>Edit</button>
+                                    <button type="button" className="btn sm danger" onClick={() => setDelAcc(selected)}>Delete</button>
                                 </div>
                             </div>
 
                             <div className="kv">
-                                <div><span>Balance</span><b>{selected.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</b></div>
+                                <div><span>Balance</span><b>{Number(selected.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</b></div>
                                 <div><span>Created</span><b>{new Date(selected.createdUtc).toLocaleString()}</b></div>
                             </div>
 
@@ -197,20 +215,39 @@ export default function AccountsPanel({
 
                             <form className="xfer" onSubmit={postTransfer}>
                                 <div className="overline">Transfer</div>
+
                                 <label>From</label>
                                 <input value={`${selected.ownerName} — ${selected.accountNumber}`} readOnly />
+
                                 <label>To</label>
                                 <select value={xferTo} onChange={(e) => setXferTo(e.target.value)}>
                                     <option value="">Choose destination…</option>
-                                    {accounts.filter(a => a.id !== selected.id).map(a => (
-                                        <option key={a.id} value={a.id}>{a.ownerName} — {a.accountNumber}</option>
-                                    ))}
+                                    {accounts
+                                        .filter(a => a.id !== selected.id)
+                                        .map(a => {
+                                            const sameCurrency = String(a.currency).toUpperCase() === String(selected.currency).toUpperCase();
+                                            return (
+                                                <option key={a.id} value={a.id} disabled={!sameCurrency}>
+                                                    {a.ownerName} — {a.accountNumber} {sameCurrency ? '' : ` (currency ${String(a.currency).toUpperCase()} ≠ ${String(selected.currency).toUpperCase()})`}
+                                                </option>
+                                            );
+                                        })}
                                 </select>
+
                                 <label>Amount</label>
-                                <input type="number" step="0.01" min="0" value={xferAmt} onChange={(e) => setXferAmt(e.target.value)} />
+                                <input type="number" step="0.01" min={0} inputMode="decimal"
+                                    value={xferAmt} onChange={(e) => setXferAmt(e.target.value)} />
+
                                 <label>Description</label>
                                 <input value={xferDesc} onChange={(e) => setXferDesc(e.target.value)} />
-                                <div><button className="btn primary" type="submit" disabled={!xferTo || !xferAmt}>Post transfer</button></div>
+
+                                <div className="row actions">
+                                    <button type="submit" className="btn primary" disabled={posting || !xferTo || !xferAmt}>
+                                        {posting ? 'Posting…' : 'Post transfer'}
+                                    </button>
+                                </div>
+
+                                {msg && <div className="small" style={{ marginTop: 8 }}>{msg}</div>}
                             </form>
 
                             <hr />
@@ -229,21 +266,50 @@ export default function AccountsPanel({
                                 <tbody>
                                     {recent.map(t => (
                                         <tr key={t.id}>
-                                            <td>{new Date(t.createdAt).toLocaleString()}</td>
-                                            <td style={{ color: t.type === 'Credit' ? 'var(--green)' : 'var(--red)' }}>
-                                                {t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            <td className="small">{new Date(t.createdAt ?? t.createdUtc ?? '').toLocaleString()}</td>
+                                            <td style={{ fontWeight: 700 }} className={(t.type === 'Credit' || t.amount > 0) ? 'credit' : 'debit'}>
+                                                {Number(t.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </td>
-                                            <td>{t.type}</td>
-                                            <td>{t.description ?? ''}</td>
+                                            <td><span className="badge">{t.type}</span></td>
+                                            <td className="small">{t.description ?? ''}</td>
                                         </tr>
                                     ))}
                                     {recent.length === 0 && <tr><td colSpan={4}>No activity</td></tr>}
                                 </tbody>
                             </table>
-                        </>
+                        </div>
                     )}
                 </aside>
             </div>
+
+            {/* Modals */}
+            <AccountModal
+                open={showCreate}
+                mode="create"
+                onClose={() => setShowCreate(false)}
+                onSaved={refresh}
+            />
+            <AccountModal
+                open={!!editAcc}
+                mode="edit"
+                initial={editAcc}
+                onClose={() => setEditAcc(null)}
+                onSaved={refresh}
+            />
+            <ConfirmModal
+                open={!!delAcc}
+                title="Delete account"
+                message={
+                    <div>
+                        Are you sure you want to delete:
+                        <br />
+                        <b>{delAcc?.ownerName}</b> — <code>{delAcc?.accountNumber}</code>?
+                    </div>
+                }
+                onCancel={() => setDelAcc(null)}
+                onConfirm={confirmDelete}
+                confirming={deleting}
+            />
         </section>
     );
 }

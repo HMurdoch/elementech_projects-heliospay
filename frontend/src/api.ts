@@ -1,159 +1,61 @@
 ﻿// src/api.ts
-// Single place for all HTTP calls used by the app.
-// Works with your HelioPay.API controllers (Accounts, Transactions).
+
+// ----------------------------- Types ------------------------------------
 
 export type Currency = 'ZAR' | 'USD' | 'EUR' | 'GBP';
 
 export type Account = {
-    id: string;               // Guid
-    owner: string;
+    id: string;
+    ownerName: string;
     accountNumber: string;
-    currency: Currency;
+    currency: Currency | string;
     balance: number;
-    createdAt: string;        // ISO date
+    createdUtc: string;
 };
 
-export type AccountUpsert = {
-    owner: string;
+export type AccountDto = {
+    ownerName: string;
     accountNumber: string;
-    currency: Currency;
+    currency: Currency | string;
+    balance?: number;
 };
 
 export type TransactionType = 'Credit' | 'Debit';
 
 export type Transaction = {
-    id: string;               // Guid
-    accountId: string;        // Guid
-    amount: number;           // positive for Credit, negative for Debit in DB; UI sends + and type
-    type: TransactionType;
-    description?: string;
-    createdAt: string;        // ISO date
-};
-
-export type TxnPost = {
+    id: string;
     accountId: string;
-    amount: number;           // positive value
-    type: TransactionType;    // 'Credit' | 'Debit'
-    description?: string;
-};
-
-export type AccountsFilter = {
-    owner?: string;
     accountNumber?: string;
-    balanceFrom?: number | null;
-    balanceTo?: number | null;
-    createdFrom?: string | null; // ISO (yyyy-mm-dd) or null
-    createdTo?: string | null;   // ISO (yyyy-mm-dd) or null
+    amount: number;
+    type: TransactionType;
+    description?: string | null;
+    status?: string;
+    currency?: Currency;
+    createdAt?: string;
+    createdUtc?: string;
+    requestedUtc?: string | null;
+    completedUtc?: string | null;
+    correlationId?: string | null;
 };
 
-const API = (import.meta.env.VITE_API_URL as string) ?? 'http://localhost:5000';
-const BASE = `${API.replace(/\/+$/, '')}/api`;
+export type TransactionCreateDto = {
+    accountId: string;
+    type: TransactionType; // 'Credit' | 'Debit'
+    amount: number;        // negative for debit if hitting /transactions directly
+    description?: string | null;
+};
 
-async function http<T>(
-    path: string,
-    init?: RequestInit
-): Promise<T> {
-    const res = await fetch(path, {
-        headers: { 'Content-Type': 'application/json' },
-        ...init,
-    });
+export type TransferDto = {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;        // positive number
+    description?: string | null;
+};
 
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        // Bubble a helpful error up to the UI
-        throw new Error(`${res.status} ${res.statusText} — ${text || path}`);
-    }
-    // 204 no content?
-    if (res.status === 204) return undefined as unknown as T;
-    return res.json() as Promise<T>;
-}
+// ----------------------------- Request ----------------------------------
 
-/*───────────────────────────────────────────────────────────*
- * Accounts
- *───────────────────────────────────────────────────────────*/
-
-export async function getAccounts(): Promise<Account[]> {
-    return http<Account[]>(`${BASE}/accounts`);
-}
-
-export async function getAccountsFiltered(
-    f: AccountsFilter
-): Promise<Account[]> {
-    const q = new URLSearchParams();
-
-    if (f.owner) q.set('owner', f.owner);
-    if (f.accountNumber) q.set('accountNumber', f.accountNumber);
-    if (f.balanceFrom != null && f.balanceFrom !== undefined)
-        q.set('balanceFrom', String(f.balanceFrom));
-    if (f.balanceTo != null && f.balanceTo !== undefined)
-        q.set('balanceTo', String(f.balanceTo));
-    if (f.createdFrom) q.set('createdFrom', f.createdFrom);
-    if (f.createdTo) q.set('createdTo', f.createdTo);
-
-    const url =
-        q.toString().length > 0
-            ? `${BASE}/accounts?${q.toString()}`
-            : `${BASE}/accounts`;
-
-    return http<Account[]>(url);
-}
-
-export async function createAccount(payload: AccountUpsert): Promise<Account> {
-    return http<Account>(`${BASE}/accounts`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-    });
-}
-
-export async function updateAccount(
-    id: string,
-    payload: AccountUpsert
-): Promise<Account> {
-    return http<Account>(`${BASE}/accounts/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-    });
-}
-
-export async function deleteAccount(id: string): Promise<void> {
-    return http<void>(`${BASE}/accounts/${id}`, { method: 'DELETE' });
-}
-
-/*───────────────────────────────────────────────────────────*
- * Transactions
- *───────────────────────────────────────────────────────────*/
-
-export async function getTransactions(
-    accountId?: string,
-    q?: string
-): Promise<Transaction[]> {
-    const qs = new URLSearchParams();
-    if (accountId) qs.set('accountId', accountId);
-    if (q) qs.set('q', q);
-
-    const url =
-        qs.toString().length > 0
-            ? `${BASE}/transactions?${qs.toString()}`
-            : `${BASE}/transactions`;
-
-    return http<Transaction[]>(url);
-}
-
-export async function postTransaction(payload: TxnPost): Promise<Transaction> {
-    return http<Transaction>(`${BASE}/transactions`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-    });
-}
-
-export async function deleteTransaction(id: string): Promise<void> {
-    return http<void>(`${BASE}/transactions/${id}`, { method: 'DELETE' });
-}
-
-// Unified, typed API helpers used by the app
-// Works with: http://localhost:5000 (override via VITE_API_URL)
-
-const API_BASE = (import.meta as any)?.env?.VITE_API_URL ?? 'http://localhost:5000';
+const API_BASE =
+    (import.meta as any)?.env?.VITE_API_URL ?? 'http://localhost:5000';
 
 async function request<T>(
     path: string,
@@ -169,49 +71,71 @@ async function request<T>(
 
     const res = await fetch(url.toString(), {
         headers: { 'Content-Type': 'application/json' },
-        ...options,
-        // keep CORS simple for localhost dev
         mode: 'cors',
+        ...options,
     });
 
     if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+        throw new Error(`HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
     }
-    return (res.status === 204 ? (undefined as unknown as T) : (await res.json())) as T;
+
+    // @ts-expect-error allow void on 204 responses
+    return res.status === 204 ? undefined : (await res.json());
 }
 
-// -------------------- Accounts --------------------
-
-export type AccountDto = {
-    ownerName: string;
-    accountNumber: string;
-    currency: string;
-    balance?: number;
-};
+// ----------------------------- Accounts ---------------------------------
 
 export const AccountsApi = {
-    list: () => request<any[]>('/api/accounts'),
-    get: (id: string) => request<any>(`/api/accounts/${id}`),
+    list: () => request<Account[]>('/api/accounts'),
+    get: (id: string) => request<Account>(`/api/accounts/${id}`),
     create: (dto: AccountDto) =>
-        request<any>('/api/accounts', { method: 'POST', body: JSON.stringify(dto) }),
+        request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(dto) }),
     update: (id: string, dto: Partial<AccountDto>) =>
-        request<any>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(dto) }),
-    remove: (id: string) => request<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
+        request<Account>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(dto) }),
+    delete: (id: string) =>
+        request<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
 };
 
-// ------------------ Transactions ------------------
+// compatibility named exports (some components import these directly)
+export const listAccounts = AccountsApi.list;
+export const getAccount = AccountsApi.get;
+export const createAccount = AccountsApi.create;
+export const updateAccount = AccountsApi.update;
+export const deleteAccount = AccountsApi.delete;
 
-export type TransactionCreateDto = {
-    accountId: string;
-    type: 'Credit' | 'Debit';
-    amount: number;
-    description?: string | null;
-};
+// --------------------------- Transactions -------------------------------
 
 export const TransactionsApi = {
     list: (q?: { accountId?: string; q?: string; take?: number }) =>
-        request<any[]>('/api/transactions', { query: q }),
+        request<Transaction[]>('/api/transactions', { query: q }),
+    /**
+     * Creates a single transaction on one account.
+     * NOTE: If you use this directly for a debit, send a NEGATIVE amount.
+     * Prefer TransfersApi.transfer for two-leg transfers.
+     */
     create: (dto: TransactionCreateDto) =>
-        request<any>('/api/transactions', { method: 'POST', body: JSON.stringify(dto) }),
+        request<Transaction>('/api/transactions', { method: 'POST', body: JSON.stringify(dto) }),
 };
+
+export const listTransactions = TransactionsApi.list;
+export const createTransaction = TransactionsApi.create;
+
+// ----------------------------- Transfers --------------------------------
+
+export const TransfersApi = {
+    transfer: (dto: TransferDto) =>
+        request<void>('/api/transactions/transfer', {
+            method: 'POST',
+            body: JSON.stringify(dto),
+        }),
+};
+
+// compatibility alias
+export const transfer = TransfersApi.transfer;
+
+// ----------------------------- Utilities --------------------------------
+
+export function formatAmount(x: number, minimumFractionDigits = 2, maximumFractionDigits = 2) {
+    return Number(x ?? 0).toLocaleString(undefined, { minimumFractionDigits, maximumFractionDigits });
+}

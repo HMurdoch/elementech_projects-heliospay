@@ -14,29 +14,19 @@ public class TransactionsController : ControllerBase
     private readonly AppDbContext _db;
     public TransactionsController(AppDbContext db) => _db = db;
 
-    /// <summary>Returns recent transactions.</summary>
-    /// <param name="accountId">Optional account filter.</param>
-    /// <remarks>
-    /// Returns up to 200 most recent transactions.  
-    /// Pass <c>?accountId=GUID</c> to filter by account.
-    /// </remarks>
-    [HttpGet]
-    [SwaggerOperation(
-        Summary = "List transactions",
-        Description = "Returns up to 200 most recent transactions; optionally filter by account ID."
-    )]
-    [ProducesResponseType(typeof(IEnumerable<TransactionDto>), StatusCodes.Status200OK)]
-    public async Task<IEnumerable<TransactionDto>> Get([FromQuery] Guid? accountId)
-    {
-        var q = _db.Transactions
-            .AsNoTracking()
-            .Include(t => t.Account)   // needed for AccountNumber
-            .OrderByDescending(t => t.CreatedAt)
-            .Take(200)
-            .AsQueryable();
+    // -------------------------------- GET --------------------------------
 
-        if (accountId.HasValue)
-            q = q.Where(t => t.AccountId == accountId.Value);
+    public record Query([FromQuery] Guid? AccountId, [FromQuery] int? Take);
+
+    [HttpGet]
+    [SwaggerOperation(Summary = "List transactions")]
+    [ProducesResponseType(typeof(IEnumerable<TransactionDto>), StatusCodes.Status200OK)]
+    public async Task<IEnumerable<TransactionDto>> Get([FromQuery] Query query)
+    {
+        var q = _db.Transactions.AsNoTracking().OrderByDescending(t => t.CreatedAt).AsQueryable();
+
+        if (query.AccountId is Guid aid) q = q.Where(t => t.AccountId == aid);
+        if (query.Take is int take && take > 0) q = q.Take(take);
 
         return await q.Select(t => new TransactionDto(
                 t.Id,
@@ -55,6 +45,8 @@ public class TransactionsController : ControllerBase
             .ToListAsync();
     }
 
+    // ------------------------------- CREATE -------------------------------
+
     public record CreateTx(
         [Required] Guid AccountId,
         [Range(typeof(decimal), "-1000000000", "1000000000")] decimal Amount,
@@ -62,16 +54,12 @@ public class TransactionsController : ControllerBase
         [StringLength(256)] string? Description
     );
 
-    /// <summary>Creates a new transaction and adjusts the account balance.</summary>
-    /// <remarks>
-    /// Use a negative <c>Amount</c> for debits and a positive <c>Amount</c> for credits.  
-    /// On success returns the created transaction and a <c>Location</c> header to the list filtered by the account.
-    /// </remarks>
+    /// <summary>
+    /// Creates a single transaction and adjusts the account balance.
+    /// Negative <c>Amount</c> = debit, positive <c>Amount</c> = credit.
+    /// </summary>
     [HttpPost]
-    [SwaggerOperation(
-        Summary = "Create transaction",
-        Description = "Creates a transaction for an account; negative amount = debit, positive = credit."
-    )]
+    [SwaggerOperation(Summary = "Create transaction")]
     [ProducesResponseType(typeof(Transaction), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -86,7 +74,7 @@ public class TransactionsController : ControllerBase
             Amount = input.Amount,
             Type = input.Type,
             Description = input.Description,
-            Currency = acc.Currency,   // keep tx currency consistent with the account
+            Currency = acc.Currency,
         };
 
         _db.Transactions.Add(tx);
@@ -97,5 +85,73 @@ public class TransactionsController : ControllerBase
         await _db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(Get), new { accountId = acc.Id }, tx);
+    }
+
+    // ------------------------------ TRANSFER ------------------------------
+
+    public record TransferDto(
+        [Required] Guid FromAccountId,
+        [Required] Guid ToAccountId,
+        // IMPORTANT: do not use Range(typeof(decimal), "0.01", ...); it is culture sensitive.
+        [Range(0.01, 1000000000)] decimal Amount,
+        [StringLength(256)] string? Description
+    );
+
+    /// <summary>
+    /// Atomically transfers funds between two accounts.
+    /// Ensures both accounts exist, same currency, sufficient funds; writes two transactions within a DB transaction.
+    /// </summary>
+    [HttpPost("transfer")]
+    [SwaggerOperation(Summary = "Transfer funds (atomic)")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Transfer([FromBody] TransferDto dto, CancellationToken ct)
+    {
+        if (dto.FromAccountId == dto.ToAccountId)
+            return BadRequest("From and To accounts cannot be the same.");
+
+        var from = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == dto.FromAccountId, ct);
+        var to = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == dto.ToAccountId, ct);
+
+        if (from is null || to is null) return NotFound("One or both accounts not found.");
+        if (!string.Equals(from.Currency, to.Currency, StringComparison.OrdinalIgnoreCase))
+            return BadRequest("Transfer requires matching currencies.");
+        if (from.Balance < dto.Amount)
+            return BadRequest("Insufficient funds.");
+
+        using var txScope = await _db.Database.BeginTransactionAsync(ct);
+
+        // Debit FROM (negative amount)
+        var debit = new Transaction
+        {
+            AccountId = from.Id,
+            Amount = -dto.Amount,
+            Type = TransactionType.Debit,
+            Description = dto.Description ?? $"Transfer to {to.AccountNumber}",
+            Currency = from.Currency,
+            RequestedUtc = DateTime.UtcNow,
+            Status = TransactionStatus.Completed
+        };
+        from.Balance += debit.Amount; // negative
+
+        // Credit TO (positive amount)
+        var credit = new Transaction
+        {
+            AccountId = to.Id,
+            Amount = dto.Amount,
+            Type = TransactionType.Credit,
+            Description = dto.Description ?? $"Transfer from {from.AccountNumber}",
+            Currency = to.Currency,
+            RequestedUtc = DateTime.UtcNow,
+            Status = TransactionStatus.Completed
+        };
+        to.Balance += credit.Amount;
+
+        _db.Transactions.AddRange(debit, credit);
+        await _db.SaveChangesAsync(ct);
+        await txScope.CommitAsync(ct);
+
+        return NoContent();
     }
 }

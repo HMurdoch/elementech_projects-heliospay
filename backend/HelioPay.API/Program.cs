@@ -20,6 +20,7 @@ builder.Services.AddCors(options =>
         .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
+        .AllowCredentials()
         .SetPreflightMaxAge(TimeSpan.FromHours(12)));
     // NOTE: withCredentials=false in your axios client, so we don't call .AllowCredentials().
     // If you ever set withCredentials=true, add .AllowCredentials() and remove wildcards.

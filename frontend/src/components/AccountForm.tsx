@@ -1,6 +1,8 @@
 ﻿import { useEffect } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import type { Account, Currency } from "../api";
+import Modal from "../ui/Modal";
+import Spinner from "../ui/Spinner";
 
 type FormValues = {
     ownerName: string;
@@ -15,7 +17,12 @@ type Props = {
     onSave: (values: FormValues) => Promise<void>;
 };
 
-export default function AccountForm({ open, initialValues, onCancel, onSave }: Props) {
+export default function AccountForm({
+    open,
+    initialValues,
+    onCancel,
+    onSave,
+}: Props) {
     const {
         register,
         handleSubmit,
@@ -41,48 +48,58 @@ export default function AccountForm({ open, initialValues, onCancel, onSave }: P
         await onSave(values);
     };
 
-    if (!open) return null;
-
     return (
-        <form onSubmit={handleSubmit(onSubmit)} className="form-grid">
-            <label>
-                <span>Owner</span>
-                <input
-                    {...register("ownerName", { required: true })}
-                    placeholder="Owner name"
-                />
-                {errors.ownerName && <small className="err">Owner is required</small>}
-            </label>
+        <Modal open={open} onClose={onCancel}>
+            <h3 style={{ margin: "0 0 10px" }}>
+                {initialValues ? "Edit account" : "New account"}
+            </h3>
+            <form onSubmit={handleSubmit(onSubmit)} className="form-grid">
+                <label>
+                    <span>Owner</span>
+                    <input
+                        {...register("ownerName", { required: true })}
+                        placeholder="Owner name"
+                    />
+                    {errors.ownerName && (
+                        <small className="err">Owner is required</small>
+                    )}
+                </label>
 
-            <label>
-                <span>Account #</span>
-                <input
-                    {...register("accountNumber", { required: true })}
-                    placeholder="e.g. 62842233416"
-                />
-                {errors.accountNumber && (
-                    <small className="err">Account # is required</small>
-                )}
-            </label>
+                <label>
+                    <span>Account #</span>
+                    <input
+                        {...register("accountNumber", { required: true })}
+                        placeholder="e.g. 62842233416"
+                    />
+                    {errors.accountNumber && (
+                        <small className="err">Account # is required</small>
+                    )}
+                </label>
 
-            <label>
-                <span>Currency</span>
-                <select {...register("currency", { required: true })}>
-                    <option value="ZAR">ZAR</option>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                </select>
-            </label>
+                <label>
+                    <span>Currency</span>
+                    <select {...register("currency", { required: true })}>
+                        <option value="ZAR">ZAR</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                    </select>
+                </label>
 
-            <div className="row gap-8">
-                <button type="button" className="btn" onClick={onCancel} disabled={isSubmitting}>
-                    Cancel
-                </button>
-                <button type="submit" className="btn primary" disabled={isSubmitting}>
-                    Save
-                </button>
-            </div>
-        </form>
+                <div className="row gap-8">
+                    <button
+                        type="button"
+                        className="btn"
+                        onClick={onCancel}
+                        disabled={isSubmitting}
+                    >
+                        Cancel
+                    </button>
+                    <button type="submit" className="btn primary" disabled={isSubmitting}>
+                        {isSubmitting ? <Spinner size={16} /> : "Save"}
+                    </button>
+                </div>
+            </form>
+        </Modal>
     );
 }

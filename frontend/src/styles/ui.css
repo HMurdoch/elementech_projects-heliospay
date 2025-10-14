@@ -1,0 +1,294 @@
+:root {
+    --bg: #0f1115;
+    --panel: #151923;
+    --muted: #8b93a7;
+    --text: #e7eaf3;
+    --line: #232838;
+    --brand: #6ea8fe;
+    --brand-600: #4c7dd1;
+    --danger: #ff6b6b;
+    --ok: #46d39a;
+    --warn: #f0ad4e;
+    --shadow: 0 8px 22px rgba(0,0,0,.3);
+    --radius: 14px;
+}
+
+* {
+    box-sizing: border-box
+}
+
+html, body, #root {
+    height: 100%
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Inter;
+}
+
+a {
+    color: var(--brand);
+    text-decoration: none
+}
+
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 0 16px
+}
+
+/* Panels / cards */
+.panel, .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.card {
+    padding: 16px
+}
+
+.sep {
+    height: 1px;
+    background: var(--line);
+    margin: 12px 0
+}
+
+/* Grid table */
+table.grid {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+}
+
+    table.grid thead th {
+        background: #171c27;
+        color: #aab2c9;
+        text-align: left;
+        font-weight: 600;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    table.grid tbody td {
+        padding: 10px 12px;
+        border-top: 1px solid var(--line)
+    }
+
+    table.grid tbody tr:hover {
+        background: #111520
+    }
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #1b2231;
+    border: 1px solid var(--line);
+}
+
+.muted {
+    color: var(--muted)
+}
+
+.small {
+    font-size: 12px
+}
+
+.credit {
+    color: var(--ok);
+    font-weight: 700
+}
+
+.debit {
+    color: var(--danger);
+    font-weight: 700
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+}
+
+    .toolbar .right {
+        margin-left: auto
+    }
+
+/* Buttons */
+.btn {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #1b2231;
+    color: var(--text);
+    cursor: pointer;
+}
+
+    .btn:hover {
+        filter: brightness(1.05)
+    }
+
+    .btn:disabled {
+        opacity: .5;
+        cursor: not-allowed
+    }
+
+    .btn.primary {
+        background: var(--brand);
+        border-color: var(--brand);
+        color: #0a0d14
+    }
+
+    .btn.ghost {
+        background: transparent
+    }
+
+    .btn.danger {
+        background: #2a1820;
+        border-color: #4a1b27;
+        color: #ff9aa7
+    }
+
+    .btn.sm {
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 8px
+    }
+
+/* Form grid */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 12px
+}
+
+    .form-grid .span-2 {
+        grid-column: 1/-1
+    }
+
+label {
+    display: grid;
+    gap: 6px
+}
+
+input, select, textarea {
+    height: 36px;
+    background: #0f1320;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 0 12px;
+}
+
+    input:focus, select:focus, textarea:focus {
+        outline: 2px solid #2a3960;
+        border-color: #2a3960
+    }
+
+.err {
+    color: #ff9aa7
+}
+
+/* ===== Layout: Accounts page ===== */
+.accounts-page {
+    min-height: calc(100vh - 100px);
+}
+
+    .accounts-page .accounts-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+
+    /* Grid stretches to viewport height; panes will fill it */
+    .accounts-page .accounts-2col {
+        display: grid;
+        grid-template-columns: 1fr 420px;
+        gap: 16px;
+        height: calc(100vh - 140px); /* adjust if header/toolbar is taller/shorter */
+    }
+
+    /* Turn panes into flex columns so inner regions can grow/shrink */
+    .accounts-page .pane-left,
+    .accounts-page .pane-right {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 0; /* allow children to shrink; critical for nested scrolling */
+    }
+
+    /* Fixed-height filter row at the top of the left pane */
+    .accounts-page .filters {
+        display: grid;
+        grid-template-columns: 1fr 1fr 110px 110px 160px 160px;
+        gap: 8px;
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        flex: 0 0 auto;
+    }
+
+    /* Only the list area scrolls, and only if content overflows */
+    .accounts-page .list-scroll {
+        flex: 1 1 auto;
+        overflow: auto;
+        min-height: 0;
+    }
+
+    /* Details on the right also fill and scroll if needed */
+    .accounts-page .details-card {
+        padding: 16px;
+        flex: 1 1 auto;
+        overflow: auto;
+        min-height: 0;
+    }
+
+.overline {
+    font-size: 11px;
+    color: #9aa3b8;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.title {
+    margin: 6px 0 4px 0
+}
+
+.xfer label {
+    margin-top: 8px
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 8px
+}
+
+.actions {
+    justify-content: flex-end
+}
+
+.center {
+    display: grid;
+    place-items: center
+}
+
+/* Spinner */
+@keyframes spin {
+    to {
+        transform: rotate(360deg)
+    }
+}

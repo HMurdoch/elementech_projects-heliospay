@@ -9,16 +9,20 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Allow your static site (and localhost for dev)
+var allowedOrigins = (Environment.GetEnvironmentVariable("CORS_ORIGINS")
+                      ?? "https://elementech-projects-heliospay.onrender.com,http://localhost:3000")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("web", p => p
-        .WithOrigins(
-            "http://localhost:3000",                                  // dev
-            "https://<your-render-static-site>.onrender.com"          // prod (replace!)
-        )
+        .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .AllowCredentials()); // remove if you never use cookies/auth
+        .SetPreflightMaxAge(TimeSpan.FromHours(12)));
+    // NOTE: withCredentials=false in your axios client, so we don't call .AllowCredentials().
+    // If you ever set withCredentials=true, add .AllowCredentials() and remove wildcards.
 });
 
 // ----- DB connection: Dev uses appsettings(local); Prod uses env var -----

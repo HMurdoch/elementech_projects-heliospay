@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "HelioPay.API": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "swagger", // <-- open /swagger on start
+      "applicationUrl": "http://localhost:5000",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

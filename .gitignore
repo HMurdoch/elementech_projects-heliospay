@@ -42,7 +42,6 @@
 *.com
 *.manifest
 *.config
-*.json
 *.deps.json
 *.runtimeconfig.json
 *.designer.cs

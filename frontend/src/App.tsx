@@ -1,9 +1,7 @@
-﻿// src/App.tsx
-import { useEffect, useState } from 'react';
-import type { Account } from './types';
-import { AccountsApi } from './api';
-import AccountsPanel from './components/AccountsPanel';
-import AccountForm from './components/AccountForm'; // assumes you already have this
+﻿import { useEffect, useState } from "react";
+import { AccountsApi, type Account } from "./api";
+import AccountsPanel from "./components/AccountsPanel";
+import AccountForm from "./components/AccountForm";
 
 export default function App() {
     const [accounts, setAccounts] = useState<Account[]>([]);
@@ -11,12 +9,11 @@ export default function App() {
     const [editing, setEditing] = useState<Account | null>(null);
 
     async function refreshAccounts() {
-        setAccounts(await AccountsApi.list());
+        const data = await AccountsApi.list();
+        setAccounts(data);
     }
 
-    useEffect(() => {
-        refreshAccounts();
-    }, []);
+    useEffect(() => { void refreshAccounts(); }, []);
 
     function onCreate() {
         setEditing(null);
@@ -30,11 +27,15 @@ export default function App() {
 
     async function onDelete(acc: Account) {
         if (!confirm(`Delete account ${acc.accountNumber}?`)) return;
-        await AccountsApi.remove(acc.id);
+        await AccountsApi.delete(acc.id);
         await refreshAccounts();
     }
 
-    async function handleFormSubmit(values: any) {
+    async function handleFormSubmit(values: {
+        ownerName: string;
+        accountNumber: string;
+        currency: "ZAR" | "USD" | "EUR" | "GBP";
+    }) {
         if (editing) {
             await AccountsApi.update(editing.id, values);
         } else {
@@ -47,7 +48,6 @@ export default function App() {
 
     return (
         <main className="container">
-            {/* top bar (keep your Swagger link etc. here if you want) */}
             <AccountsPanel
                 accounts={accounts}
                 setAccounts={setAccounts}

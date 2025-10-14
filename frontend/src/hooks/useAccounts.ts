@@ -1,23 +1,60 @@
 import { useCallback, useEffect, useState } from "react";
-import { Account, getAccounts, createAccount, updateAccount, deleteAccount, AccountCreate, AccountUpdate } from "../services/accounts";
+import type { Account } from "../api";
+import {
+    listAccounts,
+    getAccount,
+    createAccount,
+    updateAccount,
+    deleteAccount,
+    type AccountDto,
+} from "../services/accounts";
 
-export function useAccounts(defaultCurrency?: string) {
+/**
+ * Simple accounts hook that owns list state + CRUD helpers.
+ */
+export default function useAccounts() {
     const [items, setItems] = useState<Account[]>([]);
     const [loading, setLoading] = useState(false);
-    const [currency, setCurrency] = useState<string | undefined>(defaultCurrency);
 
     const refresh = useCallback(async () => {
         setLoading(true);
-        try { setItems(await getAccounts(currency)); }
-        finally { setLoading(false); }
-    }, [currency]);
+        try {
+            const data = await listAccounts();
+            setItems(data);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-    useEffect(() => { refresh(); }, [refresh]);
+    const fetchOne = useCallback(async (id: string) => {
+        return await getAccount(id);
+    }, []);
+
+    const create = useCallback(async (dto: AccountDto) => {
+        await createAccount(dto);
+        await refresh();
+    }, [refresh]);
+
+    const update = useCallback(async (id: string, dto: Partial<AccountDto>) => {
+        await updateAccount(id, dto);
+        await refresh();
+    }, [refresh]);
+
+    const remove = useCallback(async (id: string) => {
+        await deleteAccount(id);
+        await refresh();
+    }, [refresh]);
+
+    useEffect(() => { void refresh(); }, [refresh]);
 
     return {
-        items, loading, currency, setCurrency, refresh,
-        async create(p: AccountCreate) { const a = await createAccount(p); setItems(v => [a, ...v]); },
-        async update(id: string, p: AccountUpdate) { const a = await updateAccount(id, p); setItems(v => v.map(x => x.id === id ? a : x)); },
-        async remove(id: string) { await deleteAccount(id); setItems(v => v.filter(x => x.id !== id)); },
+        items,
+        loading,
+        refresh,
+        fetchOne,
+        create,
+        update,
+        remove,
+        setItems, // exposed in case a component wants to optimistically update
     };
 }

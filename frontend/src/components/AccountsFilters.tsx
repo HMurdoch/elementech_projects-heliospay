@@ -13,6 +13,15 @@ type Filters = {
     createdTo?: string;     // yyyy-mm-dd
 };
 
+export type FilterState = {
+    owner?: string;
+    accountNumber?: string;
+    balanceFrom?: number | null;
+    balanceTo?: number | null;
+    createdFrom?: string;
+    createdTo?: string;
+};
+
 export default function AccountsFilters({
     value,
     onChange,

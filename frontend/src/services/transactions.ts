@@ -1,26 +1,22 @@
-import { api } from "../lib/api";
-
-export type Transaction = {
-    id: string;
-    accountId: string;
-    createdAt: string;
-    amount: number;
-    type: "Credit" | "Debit";
-    description?: string;
-};
+import { api } from "../api/client";
+import type { Transaction } from "../api";
 
 export type TxCreate = {
     accountId: string;
-    amount: number; // + credit / - debit (or include type)
     type: "Credit" | "Debit";
+    amount: number;
     description?: string;
 };
 
-export async function getTransactions(accountId?: string) {
-    const res = await api.get<Transaction[]>("/api/transactions", { params: { accountId } });
-    return res.data;
+export async function listTransactions(params?: {
+    accountId?: string;
+    take?: number;
+}): Promise<Transaction[]> {
+    const { data } = await api.get<Transaction[]>("/transactions", { params });
+    return data;
 }
-export async function createTransaction(payload: TxCreate) {
-    const res = await api.post<Transaction>("/api/transactions", payload);
-    return res.data;
+
+export async function createTransaction(payload: TxCreate): Promise<Transaction> {
+    const { data } = await api.post<Transaction>("/transactions", payload);
+    return data;
 }

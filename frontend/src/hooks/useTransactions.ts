@@ -1,21 +1,43 @@
 import { useCallback, useEffect, useState } from "react";
-import { Transaction, getTransactions, createTransaction, TxCreate } from "../services/transactions";
+import type { Transaction } from "../api";
+import {
+    listTransactions,
+    createTransaction,
+    type TxCreate,
+} from "../services/transactions";
 
-export function useTransactions() {
+/**
+ * Transactions hook. If an accountId is provided, it filters by that account.
+ */
+export default function useTransactions(accountId?: string) {
     const [items, setItems] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(false);
-    const [accountId, setAccountId] = useState<string | undefined>(undefined);
 
     const refresh = useCallback(async () => {
         setLoading(true);
-        try { setItems(await getTransactions(accountId)); }
-        finally { setLoading(false); }
+        try {
+            const data = await listTransactions({
+                accountId: accountId || undefined,
+                take: 10,
+            });
+            setItems(data);
+        } finally {
+            setLoading(false);
+        }
     }, [accountId]);
 
-    useEffect(() => { refresh(); }, [refresh]);
+    const create = useCallback(async (payload: TxCreate) => {
+        await createTransaction(payload);
+        await refresh();
+    }, [refresh]);
+
+    useEffect(() => { void refresh(); }, [refresh]);
 
     return {
-        items, loading, accountId, setAccountId, refresh,
-        async create(p: TxCreate) { const t = await createTransaction(p); setItems(v => [t, ...v]); }
+        items,
+        loading,
+        refresh,
+        create,
+        setItems,
     };
 }

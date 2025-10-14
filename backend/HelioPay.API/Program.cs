@@ -9,6 +9,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("web", p => p
+        .WithOrigins(
+            "http://localhost:3000",                                  // dev
+            "https://<your-render-static-site>.onrender.com"          // prod (replace!)
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()); // remove if you never use cookies/auth
+});
+
 // ----- DB connection: Dev uses appsettings(local); Prod uses env var -----
 var config = builder.Configuration;
 
@@ -52,6 +64,9 @@ app.UseSwaggerUI(opt =>
     // JSON at /swagger/v1/swagger.json
     opt.SwaggerEndpoint("/swagger/v1/swagger.json", "HeliosPay API v1");
 });
+
+app.UseCors("web");
+app.MapControllers();
 
 // Optional redirect: open root -> /swagger
 app.MapGet("/", ctx =>

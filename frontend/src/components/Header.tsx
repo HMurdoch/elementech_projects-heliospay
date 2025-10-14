@@ -7,7 +7,9 @@ export default function Header() {
                 <div className="h1">HeliosPay • Demo</div>
                 <div className="muted small">Integration POC · {dayjs().format('YYYY')}</div>
             </div>
-            <a className="small" href={`${import.meta.env.VITE_API_BASE}/swagger`} target="_blank">Open Swagger ↗</a>
+            <a className="small" href={`${import.meta.env.VITE_API_URL}/swagger`} target="_blank" rel="noreferrer">
+                Open Swagger ↗
+            </a>
         </div>
     )
 }
